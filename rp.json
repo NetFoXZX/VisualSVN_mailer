@@ -1,0 +1,43 @@
+[
+  {
+    "RepoName": "Repo1",
+    "PathsRecivers": [
+      {
+        "Path": "/",
+        "Mail": [
+          "user1@mail.domain",
+          "user2@mail.domain",
+          "user3@mail.domain"
+        ]
+      },
+      {
+        "Path": "/folder/subfolder",
+        "Mail": [
+          "developer1@mail.domain",
+          "developer2@mail.domain",
+          "developer3@mail.domain"
+        ]
+      }
+    ]
+  },
+  {
+    "RepoName": "Repo2",
+    "PathsRecivers": [
+      {
+        "Path": "/",
+        "Mail": [
+          "mail@mail.domain",
+          "developer1@mail.domain"
+        ]
+      },
+      {
+        "Path": "/trunk/data",
+        "Mail": [
+          "developer1@mail.domain",
+          "developer2@mail.domain",
+          "developer3@mail.domain"
+        ]
+      }
+    ]
+  }
+]
