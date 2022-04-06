@@ -8,3 +8,6 @@
 - Получает почтовый адрес автора из Active Directory
 - Формирование HTML кода, пригодного для отправки по почте или на frontend
 - Сообщение содержит гиперссылки на изменения объейтов и ревизии целиком, а так же обратный почтовый адрес автора
+
+## ScreenShots
+![Image](https://raw.githubusercontent.com/NetFoXZX/VisualSVN_mailer/main/notification.png)
