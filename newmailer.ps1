@@ -1,10 +1,9 @@
 param(
     #get parametrs from hook 
-    [string]$Revision = "", #Revision number %2 1
-    [string]$RepPath = "" #Rpo path %1 
+    [string]$Revision,# = "58", #Revision number %2 
+    [string]$RepPath 
  
 )
-
 Enum VerbType
 {
     AddFile = 0
@@ -21,7 +20,6 @@ class PathReciverClass{
 
     PathReciverClass([string]$Path,[System.Collections.Generic.List[string]]$Mails)
     {
-        $this.EMails = New-Object System.Collections.Generic.List[string]
         $this.Path = $Path;
         $this.EMails = $Mails;
     }
@@ -37,12 +35,13 @@ class ChangePathClass{
         $this.Path = $Path;
         $this.Verb = $Verb;
     }
+   # [System.Collections.Generic.List[string]]$Mails;
 } #class
 
 
 
-#Should be renamed to "RevisionClass"
-class RepositoryClass {
+
+class RevisionClass {
     [string]$RepositoryName;
     [string]$RepositoryPath;
     [string]$Author;
@@ -52,40 +51,77 @@ class RepositoryClass {
     [string]$DBFormat;
     [string]$RevisionLoclaPath;
     [System.Collections.Generic.List[ChangePathClass]]$ChangePaths;
+    [string]$DataPath;
     
-    RepositoryClass([string]$RepositoryPath, [int]$RevisionNumber) #Constructor
+    RevisionClass([string]$RepositoryPath, [int]$RevisionNumber) #Constructor
     {
-        $this.RevisionNumber = $RevisionNumber;
-        $this.RepositoryPath = $RepositoryPath;
-        $this.RepositoryName = $this.GetRepositoryName();
-        $this.DBFormat = $this.GetDBFormat();
-        $this.RevisionLoclaPath = $this.GetRevisionPath();
-        
-        $this.SetAuthorAndDescription();
-        $this.ChangePaths = New-Object System.Collections.Generic.List[ChangePathClass];
+        $this.SetupRevision($RepositoryPath, $RevisionNumber)
+    }
 
-        $this.AuthorMailAddress = $this.GetMailFromName();
+    hidden [void]SetupRevision([string]$RepositoryPath, [int]$RevisionNumber)
+    {
+        $this.RevisionNumber = $RevisionNumber
+        $this.RepositoryPath = $RepositoryPath
+        
+        $this.DataPath = $this.GetDataPath()
+
+        $this.RepositoryName = $this.GetRepositoryName()
+        $this.DBFormat = $this.GetDBFormat()
+        $this.RevisionLoclaPath = $this.GetRevisionPath()
+        
+        $this.SetAuthorAndDescription()
+        $this.ChangePaths = New-Object System.Collections.Generic.List[ChangePathClass]
+
+        
+
+        $this.AuthorMailAddress = $this.GetMailFromName()
+        $this.SetChangePaths()
+    }
+
+    [string]GetDataPath(){
+        [string]$Result = "\db\"
+        [string]$FSType = ""
+        [string]$Path =  $this.RepositoryPath + "\db\fs-type"
+        try{
+            
+            $FSType = Get-Content $Path -ErrorAction Stop
+        }
+        catch{
+            Write-Host "Не найден файл: $Path" -ForegroundColor Red
+        }
+        if ($FSType -eq "vdfs"){
+            $Result = "\db\data\"
+        }
+
+        return $Result
     }
 
     [string] GetRepositoryName()
     { #Get name from full path
-        $TPath = $this.RepositoryPath.Split("\") #form path to Name
-        [string] $result = $TPath[$TPath.Length-1]
-        return $result
+        $TPath = $this.RepositoryPath.Split([System.IO.Path]::DirectorySeparatorChar) #form path to Name
+        [string] $Result = $TPath[$TPath.Length-1]
+        return $Result
     }
 
     [string] GetDBFormat()
-    { #Get database format  from file "format"
-        $Path = $this.RepositoryPath + "\db\format"
-        $FormatContent = Get-Content $Path
-        
+    { #Get database format  from file format
+        [string]$Path = $this.RepositoryPath + $this.DataPath + "format"
+        [string]$FormatContent = ""
+        try{ 
+            $FormatContent =  Get-Content $Path -ErrorAction Stop
+        }
+        catch{
+            Write-Host "Не найден файл: $Path" -ForegroundColor Red
+        }
+        [string]$Result = ""
         if ($FormatContent -like "*layout linear*"){
-            return "linear"
+            $Result = "linear"
         }
         else {
             [string]$div = $FormatContent.Split(" ")[3].ToString()
-            return $div
+            $Result = $div
         }
+        return $Result
     }
    
     [string] GetRevisionPath() 
@@ -104,67 +140,73 @@ class RepositoryClass {
 
     [void] SetAuthorAndDescription()
     {
-        $Path = $this.RepositoryPath + "\db\revprops\" + $this.RevisionLoclaPath + $this.RevisionNumber
-        $Content = Get-Content -path $Path -Encoding UTF8
+        [string]$Path = $this.RepositoryPath + $this.DataPath + "revprops\" + $this.RevisionLoclaPath + $this.RevisionNumber
+        $Content = "" 
+        try{
+            $Content = Get-Content -path $Path -Encoding UTF8 -ErrorAction Stop
+        }
+        catch{
+            Write-Host "Не найден файл: $Path" -ForegroundColor Red
+        }
         
         $this.Author = $Content[3]
         $this.Description =  $Content[$Content.Length - 2]
-
     }
     
-
     [string] GetMailFromName()
     {
-
-        #Getting email address from AD user
-        $Searcher = New-Object System.DirectoryServices.DirectorySearcher
+        [System.DirectoryServices.DirectorySearcher]$Searcher = [System.DirectoryServices.DirectorySearcher]::new()
         $Searcher.Filter="(&(objectClass=user)(SamAccountName=" + $this.Author + "))"
         $Searcher.PropertiesToLoad.Add("mail")
         
         $Users = $Searcher.FindAll()
-        $Res = $Users.Properties.Item("mail")
-        return $Res
+        [string]$Result = $Users.Properties.Item("mail")
+        return $Result
     }
-
 
     [void] SetChangePaths()
     {
-        $ContentPath = $this.RepositoryPath + "\db\revs\" + $this.RevisionLoclaPath + $this.RevisionNumber
+        [string]$ContentPath = $this.RepositoryPath + $this.DataPath + "revs\" + $this.RevisionLoclaPath + $this.RevisionNumber
         
-        $FilesContent = Get-Content -Path $ContentPath -Encoding UTF8
-        # Очень странная конструкция с двойным отрицанием. ;))) Условия сравнения изменилось, но я так и не добрался до рефакторинга
+        $FilesContent = ""
+        try{
+            $FilesContent =  Get-Content -Path $ContentPath -Encoding UTF8 -ErrorAction Stop
+        }
+        catch{
+            Write-Host "Не найден файл: $ContentPath " -ForegroundColor Red
+        }
+
         $Verb = $FilesContent | Select-String -Pattern " Add-file " -AllMatches
-        if (-Not !$Verb){
+        if ($Verb){
             $this.GetFileList($Verb, [VerbType]::AddFile)
         }
         
         $Verb = $FilesContent | Select-String -Pattern " Add-dir " -AllMatches
-        if (-Not !$Verb){
+        if ($Verb){
              $this.GetFileList($Verb, [VerbType]::AddDir)
         }
         
         $Verb = $FilesContent | Select-String -Pattern " Modify-file " -AllMatches
-        if (-Not !$Verb){
+        if ($Verb){
             $this.GetFileList($Verb, [VerbType]::ModifyFile)
         }
         
         $Verb = $FilesContent | Select-String -Pattern " replace-file " -AllMatches
-        if (-Not !$Verb){
+        if ($Verb){
             $this.GetFileList($Verb, [VerbType]::ReplaceFile)
         }
         
         $Verb = $FilesContent | Select-String -Pattern " Delete-dir " -AllMatches
-        if (-Not !$Verb){
+        if ($Verb){
             $this.GetFileList($Verb, [VerbType]::DeleteDir)
         }
 
         $Verb = $FilesContent | Select-String -Pattern " Delete-file " -AllMatches
-        if (-Not !$Verb){
+        if ($Verb){
             $this.GetFileList($Verb, [VerbType]::DeleteFile)
         }
         #Write-Host $this.ChangePaths[0].Path
     }
-
 
     [void] GetFileList($Content, [VerbType]$Verb){ #Get file list from content
         [string]$FullStr = ""
@@ -174,10 +216,9 @@ class RepositoryClass {
             
             [ChangePathClass]$ResPath = [ChangePathClass]::New($Res, $Verb);
             $this.ChangePaths.Add($ResPath)
-        
         }   #Content
+      #  Write-Host $this.ChangePaths[0].Path
     }
-
 }
 
 
@@ -190,18 +231,28 @@ class MailerSettings{
 
     MailerSettings($RepositoryName)
     {
-        $this.PathToJSON = $PSScriptRoot + "\rp.json"; #or path to JSON file
+        #$this.PathToJSON = $PSScriptRoot + "\mailersettings.json";
+        $this.PathToJSON = $PSScriptRoot + "\rp.json";
         $this.RepositoryName = $RepositoryName;
+        
+       
+
         $this.ReadSettings();
         
-        $this.PathReciver = New-Object System.Collections.Generic.List[PathReciverClass]
+        $this.PathReciver = [System.Collections.Generic.List[PathReciverClass]]::new()
         $this.SetPathsNew();
     }
 
     [void]ReadSettings()
     {
-        $result = Get-Content -Path $this.PathToJSON -Raw -Encoding UTF8 | ConvertFrom-Json -AsHashtable
-        $this.AllSettings = $result
+        
+        try{
+            $Result = Get-Content -Path $this.PathToJSON -Raw -Encoding UTF8 | ConvertFrom-Json -AsHashtable -ErrorAction Stop
+            $this.AllSettings = $Result
+        }
+        catch{
+            Write-Host "Не найден файл: $($this.PathToJSON)" -ForegroundColor Red
+        }
     }
 
     [void]SetPathsNew() 
@@ -214,7 +265,6 @@ class MailerSettings{
              $this.PathReciver.Add($PRItme)
         }
     }
-
 } 
   
 
@@ -223,14 +273,14 @@ class SenderServerClass{
     [string]$FQDNServerName = "localhost";
 
 
-    SenderServerClass([RepositoryClass]$Repository)
+    SenderServerClass([RevisionClass]$Revision)
     {
         $this.ServerName = $env:COMPUTERNAME 
         $this.FQDNServerName = [System.Net.Dns]::GetHostByName(($this.ServerName)).HostName
     }
 
 
-    Send([string]$MessageBody, [RepositoryClass]$Repository, [string]$EmailAddresses )
+    Send([string]$MessageBody, [RevisionClass]$Revision, [System.Collections.Generic.List[string]]$EmailAddresses)
     {
 
         $username = "domain\user"
@@ -245,8 +295,8 @@ class SenderServerClass{
         
         [string]$SMTPFrom = $this.ServerName+"@mail.domain"
         
-        [string]$Subject = $Repository.RepositoryName + ": " + $Repository.Author + ": r" + $Repository.RevisionNumber
-        $message = New-Object System.Net.Mail.MailMessage 
+        [string]$Subject = $Revision.RepositoryName + ": " + $Revision.Author + ": r" + $Revision.RevisionNumber
+        [System.Net.Mail.MailMessage]$message = [System.Net.Mail.MailMessage]::new()
         $message.From = $SMTPFrom
         $message.IsBodyHTML = $true
 
@@ -254,16 +304,15 @@ class SenderServerClass{
         
         $message.Body = $messagebody 
 
-        $view = [System.Net.Mail.AlternateView]::CreateAlternateViewFromString($messagebody, $null, "text/html")
+        [System.Net.Mail.AlternateView]$view = [System.Net.Mail.AlternateView]::CreateAlternateViewFromString($messagebody, $null, "text/html")
         $message.AlternateViews.Add($view)
 
-        $message.ReplyToList.Add($Repository.AuthorMailAddress)
+        $message.ReplyToList.Add($Revision.AuthorMailAddress)
 
-        $MailAddreses = $EmailAddresses.Split(" ")
-        foreach ($To in $MailAddreses){ #Gnerate reciver list
+        foreach ($To in $EmailAddresses){ #Gnerate reciver list
             $message.To.Add($To)
         }
-
+       
         $smtp.Send($message)
             
         #Kill all!
@@ -271,47 +320,45 @@ class SenderServerClass{
         $smtp.Dispose()
         $message.Dispose()
     }
-
 }
 
 
 class ProcessTaskClass {
-    [RepositoryClass]$Repository;
+    [RevisionClass]$Revision;
     [System.Collections.Generic.List[PathReciverClass]]$AllTasks;
     [System.Collections.Generic.List[PathReciverClass]]$TasksToProcess;
 
-    ProcessTaskClass([RepositoryClass]$Repository, [System.Collections.Generic.List[PathReciverClass]]$AllTasks)
+    ProcessTaskClass([RevisionClass]$Revision, [System.Collections.Generic.List[PathReciverClass]]$AllTasks)
     {
         $this.AllTasks = $AllTasks
-        $this.Repository = $Repository
+        $this.Revision = $Revision
 
         $this.TasksToProcess = $this.AllTasks | Sort-Object Path -Unique
 
-        $this.Processing()
+      #  $this.Processing()
     }
 
     [void]Processing()
     {
-        [System.Collections.Generic.List[ChangePathClass]]$ValidPathsList = New-Object System.Collections.Generic.List[ChangePathClass]
+        [System.Collections.Generic.List[ChangePathClass]]$ValidPathsList = [System.Collections.Generic.List[ChangePathClass]]::new()
         
         foreach ($TaskItem in $this.TasksToProcess) {
-            foreach ($ChagePathItem in $this.Repository.ChangePaths)
+            foreach ($ChagePathItem in $this.Revision.ChangePaths)
             {
                 if ($ChagePathItem.Path.Contains($TaskItem.Path))
                 {
                     $ValidPathsList.Add($ChagePathItem)
                 }
             }
-            [FormatMessageBodyClass]$Message = [FormatMessageBodyClass]::new($this.Repository, $ValidPathsList)
-            [SenderServerClass]$Sender = [SenderServerClass]::new($this.Repository)
-            $Sender.Send($Message.ResultMessage, $this.Repository, $TaskItem.EMails)
+            [FormatMessageBodyClass]$Message = [FormatMessageBodyClass]::new($this.Revision, $ValidPathsList)
+            [SenderServerClass]$Sender = [SenderServerClass]::new($this.Revision)
+            $Sender.Send($Message.ResultMessage, $this.Revision, $TaskItem.EMails)
             
-            #not working from hook ((
+            #Не работает из хука ((
            # [Logger]$Log = [Logger]::New($TaskItem.EMails,  $this.Repository, $ValidPathsList)
 
             $ValidPathsList.Clear()
         }
-
     }
 }
 
@@ -319,17 +366,16 @@ class FormatMessageBodyClass {
     
     [System.Collections.Generic.List[ChangePathClass]]$PRList;
     [string]$MessageBody = "";
-    [RepositoryClass]$Repository;
-    $MessageHeader = "";
+    [RevisionClass]$Revision;
+    [string]$MessageHeader = "";
+    [string]$ResultMessage = "";
 
-    $ResultMessage = "";
-
-    FormatMessageBodyClass([RepositoryClass]$Repository, [System.Collections.Generic.List[ChangePathClass]]$PathsReciversList)
+    FormatMessageBodyClass([RevisionClass]$Revision, [System.Collections.Generic.List[ChangePathClass]]$PathsReciversList)
     {
-        $this.PRList = New-Object System.Collections.Generic.List[ChangePathClass]
+        $this.PRList = [System.Collections.Generic.List[ChangePathClass]]::new()
         $this.PRList = $PathsReciversList | Sort-Object Verb
 
-        $this.Repository = $Repository
+        $this.Revision = $Revision
         $this.SetMessageHeader()
         $this.SetMessageBody()
     }
@@ -355,33 +401,30 @@ class FormatMessageBodyClass {
     {
         $this.ResultMessage += $this.MessageHeader
 
-        $ServerName = $env:COMPUTERNAME 
-        $FQDNServerName = [System.Net.Dns]::GetHostByName(($ServerName)).HostName
+        [string]$ServerName = $env:COMPUTERNAME 
+        [string]$FQDNServerName = [System.Net.Dns]::GetHostByName(($ServerName)).HostName
         [string]$Description = ""
-        if($this.Repository.Description -ne "")
+
+        if(![string]::IsNullOrEmpty($this.Revision.Description))
         {
-            $Description = "</p><p>Комментарий: " + 
-            $this.Repository.Description  
+            $Description = "Комментарий: $($this.Revision.Description)"
         }
-        $body += "<body>"
-        $body += '<Path>Автор: <a href=mailto:'+
-            $this.Repository.AuthorMailAddress+'>'+ 
-            $this.Repository.AuthorMailAddress +' </a>' +
-            $Description + 
 
-            "</p><p><a href=https://$FQDNServerName/!/#" +
-            $this.Repository.RepositoryName + 
-            "/commit/r" + 
-            $this.Repository.RevisionNumber + 
-            "/>Список изменений</a> </p>"
-        
-            $Table = $this.FromatHTMLTable()
+        [System.Text.StringBuilder]$body = [System.Text.StringBuilder]::new()
 
-            $body += $Table
-            $body += "</body>"
-            $this.ResultMessage += $body
+        $body.Append("<body>")
+        $body.Append("Автор: <a href=mailto:$($this.Revision.AuthorMailAddress)>$($this.Revision.AuthorMailAddress)</a>")
         
+        $body.Append("<p>$Description</p>")
+        $body.Append("<p><a href=https://$FQDNServerName/!/#")
+        $body.Append("$($this.Revision.RepositoryName)/commit/r$($this.Revision.RevisionNumber)/>Список изменений</a><p/>")
         
+        $Table = $this.FromatHTMLTable()
+
+        $body.Append($Table)
+        $body.Append("</body>")
+        
+        $this.ResultMessage += $body.ToString()
     }
 
     [string]FromatHTMLTable()
@@ -389,7 +432,8 @@ class FormatMessageBodyClass {
         $ServerName = $env:COMPUTERNAME 
         $FQDNServerName = [System.Net.Dns]::GetHostByName(($ServerName)).HostName
 
-        [string]$Result = "<TABLE>"
+        [System.Text.StringBuilder]$Result = [System.Text.StringBuilder]::new()
+        $Result.Append("<TABLE>")
         
         foreach ($VerbItem in [VerbType].GetEnumNames()) 
         {
@@ -400,26 +444,25 @@ class FormatMessageBodyClass {
                 [string]$StyleClass = $VerbData[0]
                 [string]$ColumnName = $VerbData[1]
 
-                $Result += "<tr><th>"+$ColumnName+"</th></tr>"
+                $Result.Append("<tr><th>$ColumnName</th></tr>")
                 foreach ($PathItem in $Paths)
                 {
-                    $Link = "https://$FQDNServerName/svn/" + $this.Repository.RepositoryName + $PathItem.Path
+                    $Link = "https://$FQDNServerName/svn/$($this.Revision.RepositoryName)$($PathItem.Path)"
                     $HLink = $Link.Replace(" ", "%20") 
-                    $href = "<a href=" + $HLink + ">" + $Link + "</a>"
+                    $href = "<a href=$HLink>$Link</a>"
                     
-                    $Result +=  "<tr"+$StyleClass+"><td>" +
-                                $href +
-                                "</td></tr>"
+                    $Result.Append("<tr $StyleClass><td>")
+                    $Result.Append($href)
+                    $Result.Append("</td></tr>")
                 }
             }
-            
         }
         
-        $Result += "</TABLE>"
-        return $Result
+        $Result.Append("</TABLE>")
+        return $Result.ToString()
     }
 
-    [string[]]GetDataFromVerb([VerbType]$Verb)
+    hidden [string[]]GetDataFromVerb([VerbType]$Verb)
     {   
         $Result = @("","")
         if($Verb -eq [VerbType]::AddFile)
@@ -460,7 +503,6 @@ class FormatMessageBodyClass {
 
         return $Result
     }
-   
 }
 
 
@@ -468,18 +510,18 @@ class TaskGetter
 {
     [System.Collections.Generic.List[PathReciverClass]]$TaskSteck;
     [MailerSettings]$Settings;
-    [RepositoryClass]$Repository;
+    [RevisionClass]$Revision;
 
-    TaskGetter([MailerSettings]$Settings, [RepositoryClass]$Repository)
+    TaskGetter([MailerSettings]$Settings, [RevisionClass]$Revision)
     {
-        $this.Repository = $Repository
+        $this.Revision = $Revision
         $this.Settings = $Settings
-        $this.TaskSteck = New-Object System.Collections.Generic.List[PathReciverClass]
+        $this.TaskSteck = [System.Collections.Generic.List[PathReciverClass]]::new()
         $this.SetTaskList()
     }
 
-    SetTaskList(){
-        foreach($ChangePath in $this.Repository.ChangePaths.Path)
+    [void]SetTaskList(){
+        foreach($ChangePath in $this.Revision.ChangePaths.Path)
         {
             foreach($PathReciver in $this.Settings.PathReciver)
             {        
@@ -496,19 +538,19 @@ class TaskGetter
 
 Class Logger
 {
-    [string]$LogPath = "C:\log\log.log";
+    [string]$LogPath = "C:\Scripts\Mailer\Test\log.log";
     [string]$Message;
 
-    Logger($Mails, $Repository, $Path)
+    Logger($Mails, $Revision, $Path)
     {
         $this.LogPath = $PSScriptRoot + "\log.log";
-        $this.SetMessage($Mails, $Repository, $Path)
+        $this.SetMessage($Mails, $Revision, $Path)
         $this.SaveLog()
     }
 
-    [void]SetMessage($Mails, $Repository, $Path)
+    [void]SetMessage($Mails, $Revision, $Path)
     {
-        $this.Message = [datetime]::Now.ToString() + ":" + $Repository.RepositoryName + ":" + $Mails + ":" + $Path.Path +";" 
+        $this.Message = [datetime]::Now.ToString() + ":" + $Revision.RepositoryName + ":" + $Mails + ":" + $Path.Path +";" 
 
     }
 
@@ -516,24 +558,18 @@ Class Logger
     {
         $this.Message | Out-File -Encoding utf8 -Append -FilePath $this.LogPath
     }
-
 }
 
 
 # Создаес объект репозитория
-[RepositoryClass]$Rep = [RepositoryClass]::New($RepPath, $Revision)
-# Заполняем необходимые данные
-$Rep.SetChangePaths();
+[RevisionClass]$Revision = [RevisionClass]::New($RepPath, $Revision)
 
 # Получаем данные из файла настроек
-[MailerSettings]$Settings = [MailerSettings]::new($Rep.RepositoryName);
+[MailerSettings]$Settings = [MailerSettings]::new($Revision.RepositoryName);
 
 # Генерируем все задания (все пути)
-[TaskGetter]$TaskSteck = [TaskGetter]::New($Settings, $Rep)
-
-# Готовим посылатель
-[SenderServerClass]$Sender = [SenderServerClass]::new($Rep);
+[TaskGetter]$TaskSteck = [TaskGetter]::New($Settings, $Revision)
 
 # Процессинг
-[ProcessTaskClass]$Processing = [ProcessTaskClass]::new($Rep, $TaskSteck.TaskSteck)
-
+[ProcessTaskClass]$Processing = [ProcessTaskClass]::new($Revision, $TaskSteck.TaskSteck)
+$Processing.Processing()
