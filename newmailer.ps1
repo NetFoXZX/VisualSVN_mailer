@@ -1,9 +1,12 @@
 param(
     #get parametrs from hook 
-    [string]$Revision, # = "58", #RevisionObj number %2 
+    [Parameter(Mandatory=$true, ValueFromPipeline=$true, Position=0)]
+    [string]$Revision, 
+    [Parameter(Mandatory=$true, ValueFromPipeline=$true, Position=1)]
     [string]$RepPath 
  
 )
+
 Enum VerbType {
     AddFile = 0
     AddDir = 1
@@ -36,8 +39,6 @@ class ChangePathClass {
 } #class
 
 
-
-
 class RevisionClass {
     [string]$RepositoryName;
     [string]$RepositoryPath;
@@ -66,8 +67,6 @@ class RevisionClass {
         
         $this.SetAuthorAndDescription()
         $this.ChangePaths = New-Object System.Collections.Generic.List[ChangePathClass]
-
-        
 
         $this.AuthorMailAddress = $this.GetMailFromName()
         $this.SetChangePaths()
@@ -99,7 +98,7 @@ class RevisionClass {
     }
 
     [string] GetDBFormat() {
-        #Get database format  from file format
+        #Get database format from file format
         [string]$Path = $this.RepositoryPath + $this.DataPath + "format"
         [string]$FormatContent = ""
         try { 
@@ -227,8 +226,6 @@ class MailerSettings {
         $this.PathToJSON = $PSScriptRoot + "\rp.json";
         $this.RepositoryName = $RepositoryName;
         
-       
-
         $this.ReadSettings();
         
         $this.PathReciver = [System.Collections.Generic.List[PathReciverClass]]::new()
@@ -261,12 +258,10 @@ class SenderServerClass {
     [string]$ServerName = "localhost";
     [string]$FQDNServerName = "localhost";
 
-
     SenderServerClass([RevisionClass]$RevisionObj) {
         $this.ServerName = $env:COMPUTERNAME 
         $this.FQDNServerName = [System.Net.Dns]::GetHostByName(($this.ServerName)).HostName
     }
-
 
     Send([string]$MessageBody, [RevisionClass]$RevisionObj, [System.Collections.Generic.List[string]]$EmailAddresses) {
 
@@ -321,7 +316,6 @@ class ProcessTaskClass {
         $this.RevisionObj = $RevisionObj
 
         $this.TasksToProcess = $this.AllTasks | Sort-Object Path -Unique
-
         #  $this.Processing()
     }
 
@@ -440,37 +434,36 @@ class FormatMessageBodyClass {
 
     hidden [string[]]GetDataFromVerb([VerbType]$Verb) {   
         $Result = @("", "")
-        if ($Verb -eq [VerbType]::AddFile) {
-            $Result[0] = " class='sadd'"
-            $Result[1] = "Добавленные файлы"
-        }
         
-        elseif ($Verb -eq [VerbType]::AddDir) {
-            $Result[0] = " class='sadd'"
-            $Result[1] = "Добавленные каталоги"
-        }
-
-        elseif ($Verb -eq [VerbType]::DeleteFile) {
-            $Result[0] = " class='sdelete'"
-            $Result[1] = "Удаленные файлы"
-        }
-
-        elseif ($Verb -eq [VerbType]::DeleteDir) {
-            $Result[0] = " class='sdelete'"
-            $Result[1] = "Удаленные каталоги"
-        }
-
-        elseif ($Verb -eq [VerbType]::ReplaceFile) {
-            $Result[0] = " class='replace'"
-            $Result[1] = "Замененные файлы"
-        }
-
-        elseif ($Verb -eq [VerbType]::ModifyFile) {
-            $Result[0] = " class='modify'"
-            $Result[1] = "Отредактированные файлы"
+        switch($Verb){
+            AddFile{
+                $Result[0] = " class='sadd'"
+                $Result[1] = "Добавленные файлы"    
+            }
+            AddDir{
+                $Result[0] = " class='sadd'"
+                $Result[1] = "Добавленные каталоги"
+            }
+            DeleteFile{
+                $Result[0] = " class='sdelete'"
+                $Result[1] = "Удаленные файлы"
+            }
+            DeleteDir{
+                $Result[0] = " class='sdelete'"
+                $Result[1] = "Удаленные каталоги"
+            }
+            ReplaceFile{
+                $Result[0] = " class='replace'"
+                $Result[1] = "Замененные файлы"
+            }
+            ModifyFile{
+                $Result[0] = " class='modify'"
+                $Result[1] = "Отредактированные файлы"
+            }
         }
 
         return $Result
+      
     }
 }
 
@@ -521,7 +514,7 @@ Class Logger {
 }
 
 
-# Создаес объект репозитория
+# Создаем объект ревизии
 [RevisionClass]$RevisionObj = [RevisionClass]::New($RepPath, $Revision)
 
 # Получаем данные из файла настроек
