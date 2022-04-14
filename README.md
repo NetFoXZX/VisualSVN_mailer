@@ -12,5 +12,4 @@
 ## ScreenShots
 ![Image](https://raw.githubusercontent.com/NetFoXZX/VisualSVN_mailer/main/notification.png)
 
-## ToDo:
-- Необходима проверка путей, т.к. в новых версиях VisualSVN путь к каталогам БД изменился (\db\data\).
+
